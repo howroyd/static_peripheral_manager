@@ -20,6 +20,14 @@ void print_span_tsv(const std::span<T> data)
     return print_span<T, Cast>(std::forward<const std::span<T>>(data), '\t');
 }
 
+void print_is_constructed()
+{
+    using std::cout;
+    auto is_constructed = UART::Iface::is_constructed_all();
+    for (std::size_t i = 0 ; i < is_constructed.size() ; ++i)
+        cout << "UART" << i << " is " << (is_constructed[i] ? "" : "not ") << "constructed\n";
+}
+
 int main()
 {
     using std::cout;
@@ -34,6 +42,7 @@ int main()
     cout << "\nInitial data:\n";
     print_span_tsv<char, int>(countup);
     print_span_tsv<char, int>(countdown);
+    print_is_constructed();
 
     cout << "\nSend data to persistent instance:\n";
     auto h_uart0 = UART::Iface(UART0);

@@ -21,7 +21,7 @@ public:
         if (not is_valid_index(idx))
             return nullptr;
 
-        if (not instance_handles[idx].expired())
+        if (is_constructed(idx))
             return nullptr;
 
         auto p = p_instance_from_idx(idx);
@@ -38,25 +38,12 @@ public:
     {
         return handle_t{get_weak_handle(idx)};
     }
-    [[nodiscard]] static auto& get_mutex(std::size_t idx)
-    {
-        return get_handle(idx)->get_mutex();
-    }
-    [[deprecated]] static auto get_mutex()
-    {
-        std::array<decltype(get_mutex())*, N_INSTANCES> ret{};
-        for (std::size_t i = 0 ; i < N_INSTANCES ; ++i)
-            ret[i] = &(get_mutex(i));
-        return ret;
-    }
 
     [[nodiscard]] static bool is_constructed(std::size_t idx)
     {
-        if (not (idx < N_INSTANCES))
-            return false;
-        return not get_weak_handle(idx).expired();
+        return is_valid_index(idx) ? 
+            (not get_weak_handle(idx).expired()) : false;
     }
-
     [[nodiscard]] static auto is_constructed(void)
     {
         std::bitset<N_INSTANCES> ret;

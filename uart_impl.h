@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #include <mutex>
 #include <span>
 
@@ -12,10 +14,35 @@ namespace UART
 
 class Impl
 {
+    bool initialised = false;
+
 public:
     UART_ID id;
     UartConfig cfg;
     mutable std::mutex mutx{};
+
+    Impl() = delete;
+    Impl(UART_ID uart_id, UartConfig uart_config)
+        : id{uart_id}, cfg{uart_config}
+    {
+        initialised = init();
+    }
+    ~Impl()
+    {
+        if (initialised)
+            initialised = deinit();
+    }
+
+    bool init()
+    {
+        std::scoped_lock lock(mutx);
+        return api_uart_init();
+    }
+    bool deinit()
+    {
+        std::scoped_lock lock(mutx);
+        return api_uart_deinit();
+    }
     
     template <class T>
     bool send(std::span<const T> data)

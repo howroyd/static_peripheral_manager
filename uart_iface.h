@@ -13,7 +13,7 @@ class Iface
 {
     using hw_iface_t = HardwarePeripheralWrapper<Impl, uart_n_hw_ports>;
     using hw_handle_t = hw_iface_t::handle_t;
-    hw_handle_t h;
+    hw_handle_t h{};
 
 public:
     Iface(UART_ID uart_id, UartConfig config = UartConfig{})
@@ -33,6 +33,15 @@ public:
 
     operator bool() const { return h ? true : false; }
 
+    bool init()
+    {
+        return h->init();
+    }
+    bool deinit()
+    {
+        return h->deinit();
+    }
+
     template <class T>
     bool send(std::span<const T> data)
     {
@@ -48,6 +57,11 @@ public:
     UART_ID     id()     const { return h->id; }
     UartConfig  config() const { return h->cfg; }
     auto&       mutex()  const { return h->mutx; }
+
+    [[nodiscard]] static auto is_constructed_all(void)
+    {
+        return hw_iface_t::is_constructed();
+    }
 
 protected:
     static constexpr std::size_t id_to_idx(UART_ID id) { return static_cast<std::size_t>(id); }

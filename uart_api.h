@@ -50,7 +50,7 @@ struct UartConfig
     int     stop_bits = 1;
     bool    flow_control = false;
 
-    friend constexpr bool operator <=>(const UartConfig&, const UartConfig&) = default;
+    friend constexpr bool operator<=>(const UartConfig&, const UartConfig&) = default;
 };
 
 
