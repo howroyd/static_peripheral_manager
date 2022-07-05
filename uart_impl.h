@@ -26,14 +26,7 @@ struct UartConfig
     int     stop_bits = 1;
     bool    flow_control = false;
 
-    bool operator==(const UartConfig& other) const
-    {
-        return (other.baud == baud)
-            && (other.bits == bits)
-            && (other.parity == parity)
-            && (other.stop_bits == stop_bits)
-            && (other.flow_control == flow_control);
-    }
+    friend bool operator<=>(const UartConfig&, const UartConfig&) = default;
 };
 
 
