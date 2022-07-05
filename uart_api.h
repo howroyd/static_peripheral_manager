@@ -24,15 +24,16 @@ inline bool api_uart_deinit()
 inline bool api_uart_send(UART_ID id, const uint8_t* buf, uint16_t len)
 {
     using namespace std::chrono_literals;
-    
-    std::cout << "api_uart_send to UART" << static_cast<int>(id) << "\n";
+    using std::cout;
+
+    cout << "api_uart_send to UART" << static_cast<int>(id) << "\n";
     for (uint16_t idx = 0 ; idx < len ; ++idx)
     {
-        std::cout << static_cast<int>(buf[idx]) << '\t';
+        cout << static_cast<int>(buf[idx]) << '\t';
         //buf[idx] = 0;
         std::this_thread::sleep_for(1ms);
     }
-    std::cout << "\n";
+    cout << "\n";
     return true;
 }
 

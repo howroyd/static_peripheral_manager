@@ -7,8 +7,6 @@
 
 bool foo(UART_ID id)
 {
-    using std::cout;
-
     std::array<std::byte, 15> out;
     std::iota<uint8_t*, uint8_t>(reinterpret_cast<uint8_t*>(out.begin()), reinterpret_cast<uint8_t*>(out.end()), 69);
 

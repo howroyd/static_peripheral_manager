@@ -11,7 +11,7 @@ template <class T, class Cast=T>
 void print_span(const std::span<T> data, const char delimiter = '\0')
 {
     for (const auto& x : data) std::cout << static_cast<Cast>(x) << delimiter;
-    std::cout << "\n"; 
+    std::cout << "\n";
 }
 
 template <class T, class Cast=T>
@@ -32,12 +32,14 @@ void print_is_constructed()
 int main()
 {
     using std::cout;
+    using std::clog;
+    using std::cerr;
 
     std::array<char, 10> countup, countdown;
 
     std::iota(countup.begin(), countup.end(), 1);
     std::iota(countdown.rbegin(), countdown.rend(), 1);
-    
+
     cout << "\nInitial data:\n";
     print_span_tsv<char, int>(countup);
     print_span_tsv<char, int>(countdown);
@@ -88,7 +90,7 @@ int main()
 
         {
             std::scoped_lock lock(mutex_cout, mutexs_uart_cout[0], mutexs_uart_cout[1]);
-            cout << "Thread" << this_id << " starting\n";
+            clog << "Thread" << this_id << " starting\n";
         }
 
         for (std::size_t iter = 0 ; iter < n_iterations ; ++iter)
@@ -102,7 +104,7 @@ int main()
 
         {
             std::scoped_lock lock(mutex_cout, mutexs_uart_cout[0], mutexs_uart_cout[1]);
-            cout << "Thread" << this_id << " finished\n";
+            clog << "Thread" << this_id << " finished\n";
         }
     };
 
