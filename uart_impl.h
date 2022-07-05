@@ -26,7 +26,7 @@ struct UartConfig
     int     stop_bits = 1;
     bool    flow_control = false;
 
-    friend bool operator<=>(const UartConfig&, const UartConfig&) = default;
+    friend constexpr bool operator <=>(const UartConfig&, const UartConfig&) = default;
 };
 
 
@@ -44,9 +44,10 @@ class UartImpl
 {
     UART_ID id;
     UartConfig cfg;
+    mutable std::mutex mutx;
 
 public:
-    constexpr UartImpl(UART_ID uart_id, UartConfig config) noexcept
+    UartImpl(UART_ID uart_id, UartConfig config) noexcept
         : id{uart_id}, cfg{config}
     {}
 
@@ -54,13 +55,20 @@ public:
     template <class T>
     bool send(std::span<const T> data)
     {
+        std::scoped_lock lock(mutx);
         return UART_IMPL::impl_send(id, std::forward<std::span<const T>>(data));
     }
 
     template <class T>
     bool receive(std::span<T> data)
     {
+        std::scoped_lock lock(mutx);
         return UART_IMPL::impl_receive(id, std::forward<std::span<T>>(data));
+    }
+
+    auto& get_mutex() const
+    {
+        return mutx;
     }
 
     UartConfig  config() const { return cfg; }
@@ -71,13 +79,13 @@ public:
 // Backend
 namespace UART_IMPL {
 
-template <class InstanceClass, std::size_t N_INSTANCES>
+template <class Impl, std::size_t N_INSTANCES>
 class HardwarePeripheralWrapper
 {
-    using weak_handle_t = std::weak_ptr<InstanceClass>;
+    using weak_handle_t = std::weak_ptr<Impl>;
 
 public:
-    using handle_t = std::shared_ptr<InstanceClass>;
+    using handle_t = std::shared_ptr<Impl>;
 
     template <class... Args>
     static handle_t construct_instance(std::size_t idx, Args&&... args)
@@ -89,26 +97,33 @@ public:
         if (not p)
             return nullptr;
 
-        const auto ret = handle_t{ new (p) InstanceClass(std::forward<Args>(args)...),
-                                    [](InstanceClass* _p){std::destroy_at(_p);} };
+        const auto ret = handle_t{ new (p) Impl(std::forward<Args>(args)...),
+                                    [](Impl* _p){std::destroy_at(_p);} };
         instance_handles[idx] = ret;
         return ret;
     }
 
     static handle_t get_handle(std::size_t idx)
     {
-        return instance_handles[idx];
+        return handle_t{get_weak_handle(idx)};
     }
     static auto& get_mutex(std::size_t idx)
     {
-        return instance_mutexes[idx];
+        return get_handle(idx)->get_mutex();
+    }
+    static auto get_mutex()
+    {
+        std::array<std::mutex*, N_INSTANCES> ret{};
+        for (std::size_t i = 0 ; i < N_INSTANCES ; ++i)
+            ret[i] = &(get_mutex(i));
+        return ret;
     }
 
     static bool is_constructed(std::size_t idx)
     {
         if (not (idx < N_INSTANCES))
             return false;
-        return not instance_handles[idx].expired();
+        return not get_weak_handle(idx).expired();
     }
 
     static auto is_constructed(void)
@@ -125,93 +140,100 @@ private:
         if (not (idx < N_INSTANCES))
             return nullptr;
 
-        const auto offset = idx * sizeof(InstanceClass);
+        const auto offset = idx * sizeof(Impl);
         return instance_memory + offset;
     }
 
-    static std::byte instance_memory[N_INSTANCES * sizeof(InstanceClass)] alignas(InstanceClass);
+    static constexpr weak_handle_t get_weak_handle(std::size_t idx)
+    {
+        return instance_handles.at(idx);
+    }
+
+    static std::byte instance_memory[N_INSTANCES * sizeof(Impl)] alignas(Impl);
     static std::array<weak_handle_t, N_INSTANCES> instance_handles;
-    static std::array<std::mutex, N_INSTANCES> instance_mutexes;
+    //static std::array<std::mutex, N_INSTANCES> instance_mutexes;
 };
 
-template <class InstanceClass, std::size_t N_INSTANCES>
-inline std::byte HardwarePeripheralWrapper<InstanceClass, N_INSTANCES>::instance_memory[N_INSTANCES * sizeof(InstanceClass)]{};
-template <class InstanceClass, std::size_t N_INSTANCES>
-inline std::array<typename HardwarePeripheralWrapper<InstanceClass, N_INSTANCES>::weak_handle_t, N_INSTANCES> HardwarePeripheralWrapper<InstanceClass, N_INSTANCES>::instance_handles{};
-template <class InstanceClass, std::size_t N_INSTANCES>
-inline std::array<std::mutex, N_INSTANCES> HardwarePeripheralWrapper<InstanceClass, N_INSTANCES>::instance_mutexes{};
+template <class Impl, std::size_t N_INSTANCES>
+inline std::byte HardwarePeripheralWrapper<Impl, N_INSTANCES>::instance_memory[N_INSTANCES * sizeof(Impl)]{};
+template <class Impl, std::size_t N_INSTANCES>
+inline std::array<typename HardwarePeripheralWrapper<Impl, N_INSTANCES>::weak_handle_t, N_INSTANCES> HardwarePeripheralWrapper<Impl, N_INSTANCES>::instance_handles{};
+//template <class Impl, std::size_t N_INSTANCES>
+//inline std::array<std::mutex, N_INSTANCES> HardwarePeripheralWrapper<Impl, N_INSTANCES>::instance_mutexes{};
 
 
-
-
-inline std::byte global_instances[uart_global_cfg::n_uarts * sizeof(UartImpl)] alignas(UartImpl);
-inline std::array<std::weak_ptr<UartImpl>, uart_global_cfg::n_uarts> global_handles;
-inline std::mutex mutex_api[uart_global_cfg::n_uarts];
-
-inline constexpr std::byte* pointer_from_idx(std::size_t idx)
+class UartInterface
 {
-    if (not (idx < uart_global_cfg::n_uarts))
-        return nullptr;
+    using impl_t = HardwarePeripheralWrapper<UartImpl, uart_global_cfg::n_uarts>;
+    static impl_t impl;
+    impl_t::handle_t my_handle;
 
-    const auto offset = idx * sizeof(UartImpl);
-    return global_instances + offset;
-}
+public:
+    UartInterface(UART_ID id, UartConfig cfg = UartConfig{})
+        : my_handle{get_uart_handle(id, cfg)}
+    {}
 
-inline auto& get_mutexs()
-{
-    return mutex_api;
-}
-
-template <class T, std::size_t N>
-inline auto is_constructed(const std::array<T,N>& arr)
-{
-    std::array<bool, N> ret;
-    for (std::size_t i = 0 ; i < N ; ++i)
+    static impl_t::handle_t get_uart_handle(UART_ID id, UartConfig cfg = UartConfig{})
     {
-        ret[i] = not arr[i].expired();
-    }
-    return ret;
-}
+        const std::size_t idx = static_cast<std::size_t>(id);
 
-template <class T, class... Args>
-inline static std::shared_ptr<T> construct_instance(std::byte* where, Args... args)
-{
-    return { new (where) T(args...), [](T* p){std::destroy_at(p);} };
-}
-}
+        if (not (idx < uart_global_cfg::n_uarts))
+            return nullptr;
 
+        if (impl.is_constructed(idx))
+        {
+            const auto h = impl.get_handle(idx);
+            return cfg == h->config() ? h : nullptr;
+        }
 
-inline static std::shared_ptr<UartImpl> get_uart_handle(UART_ID id, UartConfig cfg = UartConfig{})
-{
-    using namespace UART_IMPL;
-    using std::cout;
-
-    const std::size_t idx = static_cast<std::size_t>(id);
-
-    // Invalid UART
-    if (not (idx < global_handles.size()))
-        return nullptr;
-
-    auto& handle = global_handles[idx];
-
-    // Not already constructed
-    if (handle.expired())
-    {
-        const auto ptr = construct_instance<UartImpl>(pointer_from_idx(idx), id, cfg);
-        handle = ptr;
-
-        return ptr;
+        return impl.construct_instance(idx, id, cfg);
     }
 
-    // Get copy of existing
-    auto ptr = std::shared_ptr(handle);
+    operator bool() const
+    {
+        return my_handle ? true : false;
+    }
 
-    // Existing is incompatible
-    if (cfg != ptr->config())
-        return nullptr;
+    template <class T>
+    bool send(std::span<const T> data)
+    {
+        if (not my_handle) return false;
+        return my_handle->send(std::forward<std::span<const T>>(data));
+    }
 
-    return ptr;
+    template <class T>
+    bool receive(std::span<T> data)
+    {
+        if (not my_handle) return false;
+        return my_handle->send(std::forward<std::span<T>>(data));
+    }
+
+    UartConfig  config() const { return my_handle ? my_handle->config() : UartConfig{}; }
+    UART_ID     ID()     const { return my_handle ? my_handle->ID() : UART_INVALID; }
+
+    static bool is_constructed(std::size_t idx)
+    {
+        return impl.is_constructed(idx);
+    }
+
+    static auto is_constructed()
+    {
+        return impl.is_constructed();
+    }
+
+    static auto& get_mutex(std::size_t idx)
+    {
+        return impl.get_mutex(idx);
+    }
+    static auto get_mutex()
+    {
+        return impl.get_mutex();
+    }
+};
+
+inline HardwarePeripheralWrapper<UartImpl, uart_global_cfg::n_uarts> UartInterface::impl;
 }
+
 
 namespace UART_IMPL {
 template <class T>
@@ -222,7 +244,7 @@ inline static bool impl_send(UART_ID id, std::span<const T> data)
     if (not len)
         return false;
 
-    std::scoped_lock lock(mutex_api[static_cast<std::size_t>(id)]);
+    //std::scoped_lock lock(mutex_api[static_cast<std::size_t>(id)]);
     return api_uart_send(id, reinterpret_cast<const uint8_t*>(data.data()), len);
 }
 
@@ -234,7 +256,7 @@ inline static bool impl_receive(UART_ID id, std::span<T> data)
     if (not len)
         return false;
 
-    std::scoped_lock lock(mutex_api[static_cast<std::size_t>(id)]);
+    //std::scoped_lock lock(mutex_api[static_cast<std::size_t>(id)]);
     return api_uart_receive(id, reinterpret_cast<uint8_t*>(data.data()), len);
 }
 }
