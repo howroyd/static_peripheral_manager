@@ -1,0 +1,12 @@
+{
+    "recommendations": [
+        "aaron-bond.better-comments",
+        "alefragnani.bookmarks",
+        "ms-vscode.cpptools",
+        "austin.code-gnu-global",
+        "donjayamanne.githistory",
+        "github.vscode-pull-request-github",
+        "eamodio.gitlens",
+        "Gruntfuggly.todo-tree"
+    ]
+}
